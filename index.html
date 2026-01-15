@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Finance Tracker</title>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --white: #ffffff;
+            --muted: #94a3b8;
+            --border: #e2e8f0;
+            --income: #10b981;
+            --expense: #ef4444;
+            --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body { font-family: var(--font); background: var(--light); margin: 0; padding-bottom: 90px; -webkit-tap-highlight-color: transparent; }
+        
+        /* Layout & Cards */
+        .page { display: none; padding: 20px; animation: fadeIn 0.3s ease; }
+        .page.active { display: block; }
+        .card { background: var(--white); padding: 20px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 20px; }
+        
+        /* Typography */
+        h1 { margin: 10px 0; font-size: 32px; font-weight: 800; color: var(--dark); }
+        h3 { margin-bottom: 15px; color: var(--dark); }
+        small { color: var(--muted); font-size: 12px; }
+        .label-sm { display: block; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; margin-top: 15px; }
+        
+        /* Dashboard Elements */
+        .hero { text-align: center; padding: 20px 0; }
+        .budget-bar { display: grid; grid-template-columns: 1fr 1px 1fr; gap: 10px; text-align: center; background: var(--white); padding: 15px; border-radius: 18px; margin-bottom: 20px; align-items: center; }
+        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+        .status-grid .card { padding: 15px; margin: 0; text-align: center; }
+        .val { font-size: 16px; font-weight: 700; margin-top: 5px; color: var(--dark); }
+
+        /* Forms */
+        input, select { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 14px; background: var(--light); box-sizing: border-box; outline: none; }
+        input:focus, select:focus { border-color: var(--primary); background: var(--white); }
+        
+        /* Buttons */
+        button { border: none; cursor: pointer; font-family: var(--font); transition: transform 0.1s; }
+        button:active { transform: scale(0.96); }
+        .btn-p { width: 100%; background: var(--primary); color: white; padding: 15px; border-radius: 14px; font-size: 16px; font-weight: 600; margin-top: 20px; }
+        .btn-s { width: 100%; background: var(--dark); color: white; padding: 12px; border-radius: 12px; font-size: 13px; margin-top: 10px; }
+        .btn-del { background: #fee2e2; color: #ef4444; width: auto; padding: 6px 10px; border-radius: 8px; font-size: 10px; font-weight: 700; }
+
+        /* Navigation - UPDATED for 6 columns */
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: var(--white); display: grid; grid-template-columns: repeat(6, 1fr); padding: 10px 0 25px 0; border-top: 1px solid var(--border); z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.02); }
+        .nav-item { text-align: center; color: var(--muted); font-size: 9px; cursor: pointer; }
+        .nav-item i { display: block; font-size: 18px; margin-bottom: 4px; font-style: normal; }
+        .nav-item.active { color: var(--primary); font-weight: 700; }
+
+        /* Analysis Matrix */
+        .matrix-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .matrix-item { background: var(--light); padding: 15px; border-radius: 12px; text-align: center; }
+
+        /* Toast Notification */
+        #toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--dark); color: white; padding: 10px 20px; border-radius: 30px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 999; }
+        
+        /* Live Pill */
+        .live-pill { float: right; font-size: 10px; background: #f0fdf4; color: var(--income); padding: 4px 8px; border-radius: 6px; font-weight: 700; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="toast">Action Successful</div>
+
+    <section id="dash" class="page active">
+        <div class="hero">
+            <small>Net Assets (LKR)</small>
+            <h1 id="netVal">0.00</h1>
+            
+            <div style="position: relative; width: 110px; height: 110px; margin: 15px auto;">
+                <svg viewBox="0 0 36 36" style="width: 100%; height: 100%; transform: rotate(-90deg);">
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                          fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="3" />
+                    <path id="progRing" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                          fill="none" stroke="#10b981" stroke-width="3" stroke-dasharray="0, 100" style="transition: stroke-dasharray 0.5s ease;"/>
+                </svg>
+                <div id="progText" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 14px; font-weight: 800;">0%</div>
+            </div>
+            <small id="spentLabel" style="display: block; margin-top: -5px; opacity: 0.8;">Spent: LKR 0</small>
+        </div>
+    
+        <div class="budget-bar">
+            <div><small class="label-sm">Budget Goal</small><b id="mGoal">0</b></div>
+            <div style="border-left: 1px solid var(--border); height: 25px;"></div>
+            <div><small class="label-sm">Daily Limit</small><b id="dLimit" style="color:var(--primary)">0</b></div>
+        </div>
+    
+        <div class="status-grid">
+            <div class="card"><small class="label-sm">Main</small><div class="val" id="vMain">0</div></div>
+            <div class="card"><small class="label-sm">Saving</small><div class="val" id="vSave">0</div></div>
+            <div class="card"><small class="label-sm">CC Avail</small><div class="val" id="vCC" style="color:var(--expense)">0</div></div>
+            <div class="card"><small class="label-sm">Crypto</small><div class="val" id="vCry" style="color:var(--income)">0</div></div>
+        </div>
+    
+        <div class="card">
+            <small class="label-sm">Monthly Breakdown</small>
+            <div style="display: flex; align-items: center; gap: 20px; margin-top: 15px;">
+                <div id="pieChart" style="min-width: 100px; height: 100px; border-radius: 50%; background: conic-gradient(#eee 0% 100%);"></div>
+                <div id="chartLegend" style="flex: 1; display: grid; grid-template-columns: 1fr; gap: 5px; font-size: 10px;"></div>
+            </div>
+        </div>
+    
+        <div class="card" id="recentBox">
+            <small class="label-sm">Recent Activity</small>
+            <div id="recentList" style="margin-top:10px;"></div>
+        </div>
+    </section>
+
+    <section id="entry" class="page">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>New Entry</h3>
+                <button onclick="clearForms()" style="background:transparent; color:var(--primary); font-size:12px; font-weight:600;">Clear Form</button>
+            </div>
+            
+            <span id="eLive" class="live-pill">Select Account</span>
+            
+            <label class="label-sm">Account</label>
+            <select id="eAcc" onchange="updateLive('eAcc','eLive')">
+                <option>Main</option>
+                <option>Saving</option>
+                <option>Credit Card</option>
+            </select>
+    
+            <label class="label-sm">Type</label>
+            <select id="eType" onchange="loadCats()">
+                <option>Expense</option>
+                <option>Income</option>
+            </select>
+    
+            <label class="label-sm">Date</label>
+            <input type="date" id="eDate">
+    
+            <label class="label-sm">Category</label>
+            <select id="eCat" onchange="loadSubs()"></select>
+    
+            <label class="label-sm">Subcategory</label>
+            <select id="eSub"></select>
+    
+            <select id="eVeh" style="display:none"></select>
+    
+            <label class="label-sm">Amount (LKR)</label>
+            <input type="number" id="eAmt" placeholder="Amount" step="0.01" min="0">
+    
+            <label class="label-sm">Remark</label>
+            <input type="text" id="eRem" placeholder="Remark">
+    
+            <button class="btn-p" onclick="saveTx()">Save Entry</button>
+        </div>
+    </section>
+
+    <section id="transfer" class="page">
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin:0;">Account Transfer</h3>
+                <span id="tLive" class="live-pill" style="margin:0; font-size: 11px;">Select Source</span>
+            </div>
+            
+            <label class="label-sm">Transfer Date</label>
+            <input type="date" id="tDate" style="margin-bottom: 20px;">
+    
+            <div style="display: grid; grid-template-columns: 1fr 40px 1fr; align-items: center; gap: 10px; margin-bottom: 15px;">
+                <div>
+                    <label class="label-sm">From</label>
+                    <select id="tFrom" onchange="updateLive('tFrom','tLive')">
+                        <option value="Main">Main</option>
+                        <option value="Saving">Saving</option>
+                        <option value="Crypto">Crypto</option>
+                    </select>
+                </div>
+                <div style="text-align: center; padding-top: 15px; font-size: 20px; color: var(--muted);">⇄</div>
+                <div>
+                    <label class="label-sm">To</label>
+                    <select id="tTo">
+                        <option value="Saving">Saving</option>
+                        <option value="Main">Main</option>
+                        <option value="Crypto">Crypto</option>
+                    </select>
+                </div>
+            </div>
+    
+            <label class="label-sm">Amount (LKR)</label>
+            <input type="number" id="tAmt" placeholder="0.00" step="0.01" min="0" style="font-weight: 800; font-size: 20px; text-align: center; color: var(--income);">
+    
+            <button class="btn-s" style="background: var(--income); margin-top: 10px;" onclick="doTransfer()">Confirm Transfer</button>
+            <button class="btn-s" style="background: transparent; color: var(--muted); box-shadow: none;" onclick="nav('dash')">Cancel</button>
+        </div>
+    </section>
+
+    <section id="reports" class="page">
+        <div class="card">
+            <h3>Financial Reporter</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <select id="fYear" onchange="runReport()">
+                    <option value="">All Years</option>
+                    <option>2025</option><option>2026</option>
+                </select>
+                <select id="fMonth" onchange="runReport()">
+                    <option value="">All Months</option>
+                    <option value="-01-">January</option><option value="-02-">February</option>
+                    <option value="-03-">March</option><option value="-04-">April</option>
+                    <option value="-05-">May</option><option value="-06-">June</option>
+                    <option value="-07-">July</option><option value="-08-">August</option>
+                    <option value="-09-">September</option><option value="-10-">October</option>
+                    <option value="-11-">November</option><option value="-12-">December</option>
+                </select>
+                <select id="fType" onchange="runReport()">
+                    <option value="">All Types</option>
+                    <option>Expense</option><option>Income</option>
+                </select>
+                <select id="fAcc" onchange="runReport()">
+                    <option value="">All Accounts</option>
+                    <option>Main</option><option>Saving</option>
+                    <option>Credit Card</option><option>Crypto</option>
+                </select>
+            </div>
+            <input type="text" id="fKey" placeholder="Search Remarks..." oninput="runReport()" style="margin-top:10px;">
+            
+            <div style="background:var(--dark); color:white; padding:15px; border-radius:18px; margin-top:15px; display:flex; justify-content:space-between; align-items:center;">
+                <div><small class="label-sm" style="color:#94a3b8">Filtered Net</small><div id="fNet" style="font-size:20px; font-weight:800;">LKR 0</div></div>
+                <button onclick="exportCSV()" style="width:auto; padding:10px 15px; font-size:12px; background:var(--primary); color:white; border-radius:12px;">Export CSV</button>
+            </div>
+        </div>
+        <div id="reportList"></div>
+    </section>
+
+    <section id="stats" class="page">
+        <div class="card">
+            <h3>Analytics</h3>
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                <small class="label-sm">Daily Burn Rate</small>
+                <small id="burnStatus" style="font-weight:700; margin-top:15px;">-</small>
+            </div>
+            <div style="display:flex; align-items:baseline;">
+                <h1 id="currDaily" style="margin:0;">LKR 0</h1>
+                <small id="allowDaily" style="margin-left:5px;">/ 0</small>
+            </div>
+            <div id="forecastBox"></div>
+        </div>
+        <div class="card" style="background: var(--dark); color: white;">
+            <h3 style="margin:0 0 15px 0; color:white;">Performance Matrix</h3>
+            <div id="matrixGrid" class="matrix-grid"></div>
+        </div>
+        <div class="card">
+            <h3 style="margin-top:0;">Top 5 Spending Hotspots</h3>
+            <div id="top5List"></div>
+        </div>
+    </section>
+
+    <section id="setup" class="page">
+        <div class="card">
+            <h3>Configuration</h3>
+            <label class="label-sm">Main Account Balance</label><input type="number" id="cMain" placeholder="0.00">
+            <label class="label-sm">Savings Account Balance</label><input type="number" id="cSave" placeholder="0.00">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div><label class="label-sm">CC Limit</label><input type="number" id="cCCL" placeholder="0.00"></div>
+                <div><label class="label-sm">CC Available</label><input type="number" id="cCCA" placeholder="0.00"></div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div><label class="label-sm">USDT Rate</label><input type="number" id="cRate" placeholder="300"></div>
+                <div><label class="label-sm">Crypto Balance</label><input type="number" id="cCry" placeholder="0.00"></div>
+            </div>
+            <button class="btn-p" style="background:var(--dark); margin-top:10px;" onclick="saveConf()">Update Baselines</button>
+    
+            <hr style="margin: 25px 0; border: 0; border-top: 1px solid var(--border);">
+    
+            <h3 style="margin-bottom:15px;">Manage Vehicles</h3>
+            <div id="vehicleList" style="margin-bottom: 20px;"></div>
+    
+            <div style="background: #f1f5f9; padding: 15px; border-radius: 16px;">
+                <label class="label-sm">Add New Vehicle</label>
+                <input type="text" id="vReg" placeholder="Reg No (e.g. BDD 0471)">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <select id="vType"><option>Motorbike</option><option>Scooter</option><option>Car</option></select>
+                    <input type="text" id="vMake" placeholder="Make">
+                </div>
+                <input type="text" id="vModel" placeholder="Model">
+                <button class="btn-s" onclick="addVehicle()">Add Vehicle</button>
+            </div>
+        </div>
+    </section>
+
+    <div class="nav-bar">
+        <div class="nav-item active" onclick="nav('dash', this)"><i>⚡</i>Dash</div>
+        <div class="nav-item" onclick="nav('entry', this)"><i>📝</i>Entry</div>
+        <div class="nav-item" onclick="nav('transfer', this)"><i>⇆</i>Trnsfr</div>
+        <div class="nav-item" onclick="nav('stats', this)"><i>📊</i>Stats</div>
+        <div class="nav-item" onclick="nav('reports', this)"><i>📋</i>Report</div>
+        <div class="nav-item" onclick="nav('setup', this)"><i>⚙️</i>Setup</div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://hskramdwzubiteautnkw.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_cPy4XEg_f2eQEo0N-3UMyg_qX4nDtF8';
+        const supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let txs = [], bal = {}, conf = {}, vehs = [], filteredTxs = [];
+        
+        const CATS = {
+            "Expense": {
+                "Home Use": ["Monthly House Expense", "Mother", "Father", "Utilities (Water/Elec)", "Furniture/Hardware"],
+                "Foods & Beverages": ["Breakfast", "Lunch", "Dinner", "Snack", "Bakery Item", "Drinks", "Grocery"],
+                "Transportation": ["Fuel", "Service & Repairs", "Legal (Insurance/Rev)", "Commuting (Bus/Train)", "Parking"],
+                "Telecommunication": ["Mobile Reload", "Internet/Data Bundle", "Cable TV"],
+                "Healthcare": ["Medicine", "Doctor Visit", "Supplement", "Hospital Bill"],
+                "Fashion & Grooming": ["Wearable", "Cosmetics", "Grooming/Salon", "Top Wear", "Bottom Wear", "Underwear", "Footwear"],
+                "Entertainment": ["Travel", "Camping", "Movies", "Hobby"],
+                "Material & Chemicals": ["Tools", "Accessories", "Gadgets", "Chemicals"],
+                "Education": ["Courses", "Books", "Certifications"],
+                "Debt & Finance": ["Loan Repayment", "Credit Card Interest", "Pawn Interest", "Bank Charges"],
+                "Transfer": ["Out"]
+            },
+            "Income": {
+                "Salary": ["Monthly Base", "Overtime", "Bonus"],
+                "Freelance": ["Web Development", "Consulting"],
+                "Claims & Refunds": ["Broadband Claim", "Medical Refund", "Insurance Claim"],
+                "Gifts": ["Personal", "Foreign Transaction"],
+                "Other": ["Dividends", "Interest", "General"],
+                "Transfer": ["In"]
+            }
+        };
+
+        // --- DASHBOARD FUNCTIONS ---
+        function calculate() {
+            const baseMain = conf.Main || 0, baseSave = conf.Saving || 0, baseCrypto = conf.Crypto || 0;
+            const baseCCL = conf.CCL || 0, baseCCS = conf.CCS || 0, baseRate = conf.Rate || 300;
+
+            bal = { Main: baseMain, Saving: baseSave, Crypto: baseCrypto, "Credit Card": (baseCCL - baseCCS) };
+            let mI = 0, mE = 0, pI = 0, cMap = {};
+            const now = new Date();
+            const curM = now.toISOString().slice(0, 7);
+            const preM = new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().slice(0,7);
+
+            txs.forEach(t => {
+                const a = +t.Amount;
+                if(t.Type === "Income") bal[t.Account] += a; else bal[t.Account] -= a;
+                
+                if(t.Date.startsWith(curM) && t.Category !== "Transfer") {
+                    if(t.Type === "Income") mI += a; 
+                    else { mE += a; cMap[t.Category] = (cMap[t.Category] || 0) + a; }
+                }
+                if(t.Date.startsWith(preM) && t.Type === "Income") pI += a;
+            });
+
+            // Update UI
+            netVal.innerText = (bal.Main + bal.Saving + (bal.Crypto * baseRate)).toLocaleString();
+            vMain.innerText = bal.Main.toLocaleString();
+            vSave.innerText = bal.Saving.toLocaleString();
+            vCC.innerText = bal['Credit Card'].toLocaleString();
+            vCry.innerText = (bal.Crypto * baseRate).toLocaleString();
+
+            const budgetGoal = pI || 0;
+            const budgetPercent = budgetGoal > 0 ? Math.min(100, (mE / budgetGoal) * 100) : 0;
+            progRing.setAttribute('stroke-dasharray', `${budgetPercent}, 100`);
+            progRing.style.stroke = (mE > budgetGoal && budgetGoal > 0) ? "var(--expense)" : "var(--primary)";
+            progText.innerText = Math.round(budgetPercent) + "%";
+            spentLabel.innerText = `Spent: LKR ${mE.toLocaleString()}`;
+            mGoal.innerText = budgetGoal.toLocaleString();
+            
+            const daysLeft = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate() - now.getDate() + 1;
+            dLimit.innerText = Math.max(0, (budgetGoal - mE) / daysLeft).toLocaleString(undefined, {maximumFractionDigits:0});
+
+            // Recent List with Delete
+            recentList.innerHTML = txs.slice(0, 5).map(t => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9; font-size:12px;">
+                    <div style="flex: 1;"><b>${t.Subcategory}</b><br><small>${t.Date}</small></div>
+                    <div style="text-align: right; margin-right: 15px;">
+                        <div style="color:${t.Type==='Income'?'var(--income)':'var(--expense)'}; font-weight:800">${t.Amount.toLocaleString()}</div>
+                        <small style="opacity: 0.6;">${t.Account}</small>
+                    </div>
+                    <button onclick="delTx('${t.id}')" class="btn-del">✕</button>
+                </div>
+            `).join('');
+
+            runAnalysisEngine();
+            updateBurnRate(mE, budgetGoal);
+            runPredictiveModel(mE, mI, (bal.Main + bal.Saving));
+            
+            // Refresh Report if it's visible
+            if(document.getElementById('reports').classList.contains('active')) runReport();
+        }
+
+        async function delTx(id) {
+            if (!confirm("Delete this record?")) return;
+            const { error } = await supa.from("Transaction").delete().eq("id", id);
+            if (!error) { msg("Deleted"); load(); } else msg("Error: " + error.message);
+        }
+
+        // --- ENTRY FUNCTIONS ---
+        function loadCats() {
+            eCat.innerHTML = Object.keys(CATS[eType.value]).map(c => `<option>${c}</option>`).join("");
+            loadSubs();
+        }
+
+        function loadSubs() {
+            eSub.innerHTML = CATS[eType.value][eCat.value].map(s => `<option>${s}</option>`).join("");
+            const isTr = (eCat.value === "Transportation");
+            eVeh.style.display = isTr ? "block" : "none";
+            if(isTr) eVeh.innerHTML = vehs.map(v => `<option>${v.Registration}</option>`).join("");
+        }
+
+        async function saveTx() {
+            const amt = parseFloat(eAmt.value);
+            const acc = eAcc.value;
+            const type = eType.value;
+            
+            // VALIDATION: Numeric & Positive
+            if(isNaN(amt) || amt <= 0) return msg("Please enter a valid amount");
+            
+            // VALIDATION: Balance Check
+            if(type === 'Expense') {
+                let avail = bal[acc];
+                if(acc === 'Crypto') avail = avail * (conf.Rate || 300); // Check against LKR equivalent
+                if(amt > avail) return msg(`Insufficient funds in ${acc}`);
+            }
+
+            let rem = eRem.value;
+            if(eCat.value === "Transportation") rem = `[${eVeh.value}] ${rem}`;
+
+            const { error } = await supa.from("Transaction").insert({
+                Date: eDate.value, Type: type, Category: eCat.value,
+                Subcategory: eSub.value, Amount: amt, Remark: rem, Account: acc
+            });
+
+            if(!error) { msg("Saved"); clearForms(); nav('dash'); load(); } 
+            else msg("Error: " + error.message);
+        }
+
+        function clearForms() {
+            // New Entry
+            eAmt.value = ''; eRem.value = ''; eDate.valueAsDate = new Date();
+            eAcc.selectedIndex = 0; eType.selectedIndex = 0;
+            loadCats(); updateLive('eAcc','eLive');
+            
+            // Transfer
+            tAmt.value = ''; tDate.valueAsDate = new Date();
+            tFrom.selectedIndex = 0; tTo.selectedIndex = 1; // Default different accounts
+            updateLive('tFrom','tLive');
+            
+            // Vehicle
+            vReg.value = ''; vMake.value = ''; vModel.value = '';
+        }
+
+        // --- TRANSFER FUNCTIONS ---
+        async function doTransfer() {
+            const dateVal = tDate.value;
+            const fromAcc = tFrom.value;
+            const toAcc = tTo.value;
+            const amount = parseFloat(tAmt.value);
+
+            if (!dateVal) return msg("Select Date");
+            if (isNaN(amount) || amount <= 0) return msg("Invalid Amount");
+            if (fromAcc === toAcc) return msg("Accounts must be different");
+
+            // VALIDATION: Balance Check
+            let avail = bal[fromAcc];
+            if(fromAcc === 'Crypto') avail = avail * (conf.Rate || 300);
+            if(amount > avail) return msg(`Insufficient funds in ${fromAcc}`);
+
+            const payload = [
+                { Date: dateVal, Type: "Expense", Category: "Transfer", Subcategory: "Out", Amount: amount, Account: fromAcc, Remark: `To ${toAcc}` },
+                { Date: dateVal, Type: "Income", Category: "Transfer", Subcategory: "In", Amount: amount, Account: toAcc, Remark: `From ${fromAcc}` }
+            ];
+
+            const { error } = await supa.from("Transaction").insert(payload);
+            if(!error) { msg("Transfer Complete"); clearForms(); nav('dash'); load(); } 
+            else msg("Transfer Failed");
+        }
+
+        function updateLive(selId, dispId) {
+            const acc = document.getElementById(selId).value;
+            const val = acc === 'Crypto' ? (bal[acc] * (conf.Rate || 300)) : bal[acc];
+            const el = document.getElementById(dispId);
+            if(el) {
+                el.innerText = `LKR ${(val || 0).toLocaleString()}`;
+                el.style.background = (val || 0) <= 0 ? '#fee2e2' : '#f0fdf4';
+                el.style.color = (val || 0) <= 0 ? 'var(--expense)' : 'var(--primary)';
+            }
+        }
+
+        // --- REPORT FUNCTIONS ---
+        function runReport() {
+            // Guard: If data isn't loaded, don't run
+            if(!txs || txs.length === 0) {
+                document.getElementById('reportList').innerHTML = '<div style="text-align:center; padding:20px; color:var(--muted);">No data available.</div>';
+                return;
+            }
+
+            const y = document.getElementById('fYear').value;
+            const m = document.getElementById('fMonth').value;
+            const t = document.getElementById('fType').value;
+            const a = document.getElementById('fAcc').value;
+            const k = document.getElementById('fKey').value.toLowerCase();
+
+            filteredTxs = txs.filter(x => {
+                return (!y || x.Date.includes(y)) &&
+                       (!m || x.Date.includes(m)) &&
+                       (!t || x.Type === t) &&
+                       (!a || x.Account === a) &&
+                       (!k || (x.Remark && x.Remark.toLowerCase().includes(k)) || x.Subcategory.toLowerCase().includes(k));
+            });
+
+            let net = 0;
+            filteredTxs.forEach(x => { const v = +x.Amount; x.Type==="Income" ? net+=v : net-=v; });
+
+            const netEl = document.getElementById('fNet');
+            netEl.innerText = `LKR ${net.toLocaleString()}`;
+            netEl.style.color = net >= 0 ? "var(--primary)" : "var(--expense)";
+
+            document.getElementById('reportList').innerHTML = filteredTxs.map(x => `
+                <div class="card" style="padding:12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <b style="font-size:13px;">${x.Subcategory}</b> <small style="color:var(--muted)">• ${x.Account}</small><br>
+                        <small style="color:var(--muted); font-size:11px;">${x.Date} ${x.Remark ? `• ${x.Remark}` : ''}</small>
+                    </div>
+                    <div style="font-weight:800; color:${x.Type === 'Income' ? 'var(--income)' : 'var(--expense)'}">
+                        ${x.Type === 'Income' ? '+' : '-'}${x.Amount.toLocaleString()}
+                    </div>
+                </div>
+            `).join('') || '<div style="text-align:center; padding:20px; color:var(--muted);">No records found.</div>';
+        }
+
+        function exportCSV() {
+            if (filteredTxs.length === 0) { msg("No data"); return; }
+            const h = ["Date", "Type", "Category", "Subcategory", "Amount", "Account", "Remark"];
+            const r = filteredTxs.map(x => [x.Date, x.Type, x.Category, x.Subcategory, x.Amount, x.Account, `"${x.Remark||''}"`]);
+            const c = "data:text/csv;charset=utf-8," + h.join(",") + "\n" + r.map(e => e.join(",")).join("\n");
+            const l = document.createElement("a");
+            l.setAttribute("href", encodeURI(c));
+            l.setAttribute("download", `Report_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(l); l.click(); document.body.removeChild(l);
+        }
+
+        // --- STATS / ANALYSIS ---
+        function runAnalysisEngine() {
+            // (Same logic as previous, ensuring safe aggregation)
+            let s = { curM: { i:0, e:0 }, preM: { i:0, e:0 }, curY: { i:0, e:0 }, preY: { i:0, e:0 }, cats: {} };
+            const now = new Date(), curM = now.toISOString().slice(0,7), curY = now.getFullYear().toString();
+            const preM = new Date(now.getFullYear(), now.getMonth()-1, 1).toISOString().slice(0,7);
+            const preY = (now.getFullYear()-1).toString();
+
+            txs.forEach(t => {
+                if(t.Category==="Transfer") return;
+                const a = +t.Amount, inc = t.Type==="Income";
+                if(t.Date.startsWith(curM)) { inc ? s.curM.i+=a : s.curM.e+=a; if(!inc){ if(!s.cats[t.Category]) s.cats[t.Category]={t:0,s:{}}; s.cats[t.Category].t+=a; s.cats[t.Category].s[t.Subcategory]=(s.cats[t.Category].s[t.Subcategory]||0)+a; }}
+                else if(t.Date.startsWith(preM)) inc ? s.preM.i+=a : s.preM.e+=a;
+                if(t.Date.startsWith(curY)) inc ? s.curY.i+=a : s.curY.e+=a; else if(t.Date.startsWith(preY)) inc ? s.preY.i+=a : s.preY.e+=a;
+            });
+
+            const comp = (c, p) => { if(p===0)return '--'; const d=((c-p)/p)*100; return `<span style="color:${c>p?'var(--expense)':'var(--primary)'}">${c>p?'↑':'↓'} ${Math.abs(d).toFixed(0)}%</span>`; };
+            document.getElementById('matrixGrid').innerHTML = `
+                <div class="matrix-item"><small class="label-sm">Month Exp</small><div class="val">${s.curM.e.toLocaleString()}</div><small>${comp(s.curM.e, s.preM.e)} vs Prev</small></div>
+                <div class="matrix-item"><small class="label-sm">Year Exp</small><div class="val">${s.curY.e.toLocaleString()}</div><small>${comp(s.curY.e, s.preY.e)} vs Prev</small></div>
+                <div class="matrix-item"><small class="label-sm">Month Inc</small><div class="val" style="color:var(--income)">${s.curM.i.toLocaleString()}</div></div>
+                <div class="matrix-item"><small class="label-sm">Year Inc</small><div class="val" style="color:var(--income)">${s.curY.i.toLocaleString()}</div></div>
+            `;
+
+            let subList = [];
+            for(let c in s.cats) for(let sb in s.cats[c].s) subList.push({n:sb, p:c, a:s.cats[c].s[sb]});
+            const top5 = subList.sort((a,b)=>b.a-a.a).slice(0,5);
+            document.getElementById('top5List').innerHTML = top5.map((x,i)=>`
+                <div style="margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:700;"><span>${i+1}. ${x.n}</span><span>${x.a.toLocaleString()}</span></div>
+                    <div style="background:#eee; height:6px; border-radius:3px; margin-top:4px;"><div style="background:var(--expense); height:100%; border-radius:3px; width:${(x.a/top5[0].a*100)}%;"></div></div>
+                </div>
+            `).join('');
+        }
+
+        function updateBurnRate(exp, goal) {
+            const d = new Date(), passed = d.getDate(), total = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+            const act = exp/passed, lim = (goal||1)/total;
+            currDaily.innerText = `LKR ${act.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+            allowDaily.innerText = `/ ${lim.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+            burnStatus.innerText = act>lim?"OVER LIMIT":"SAFE";
+            burnStatus.style.color = act>lim?"var(--expense)":"var(--primary)";
+        }
+
+        function runPredictiveModel(exp, inc, bal) {
+            const d = new Date(), rem = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate() - d.getDate();
+            const vel = exp/d.getDate(), proj = vel * (rem + d.getDate()), short = (vel*rem) - bal;
+            let col = "var(--primary)", txt = "SAFE";
+            if(proj > inc) { col = "#f59e0b"; txt = "DEFICIT WARNING"; }
+            if(short > 0) { col = "var(--expense)"; txt = "CASH EXHAUSTION"; }
+            forecastBox.innerHTML = `<div style="background:${col}22; border:1px solid ${col}; padding:15px; border-radius:20px; margin-top:15px;">
+                <small class="label-sm" style="color:${col}">${txt}</small>
+                <div style="display:flex; justify-content:space-between; margin-top:8px;"><div style="font-weight:800">LKR ${proj.toLocaleString(undefined,{maximumFractionDigits:0})}</div><div style="font-weight:800">${rem} Days Left</div></div>
+                ${short>0?`<div style="margin-top:5px; font-size:10px; color:${col}">Need LKR ${short.toLocaleString()}</div>`:''}
+            </div>`;
+        }
+
+        // --- SETUP & VEHICLE FUNCTIONS ---
+        async function saveConf() {
+            const u = {
+                Main: +cMain.value, Saving: +cSave.value, CCL: +cCCL.value,
+                CCS: (+cCCL.value)-(+cCCA.value), Rate: +cRate.value, Crypto: +cCry.value
+            };
+            const { error } = await supa.from('Config').upsert({ id: 1, ...u });
+            if(!error) { msg("Updated"); load(); } else msg("Error: "+error.message);
+        }
+
+        async function addVehicle() {
+            const { error } = await supa.from('Vehicles').insert({ Registration: vReg.value, Make: vMake.value, Model: vModel.value, Type: vType.value });
+            if(!error) { msg("Vehicle Added"); clearForms(); load(); } else msg("Error: "+error.message);
+        }
+
+        async function delVehicle(id) {
+            if(!confirm("Remove Vehicle?")) return;
+            const { error } = await supa.from('Vehicles').delete().eq('id', id);
+            if(!error) { msg("Removed"); load(); } else msg("Error");
+        }
+
+        // --- CORE ---
+        function nav(p, b) {
+            document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
+            document.getElementById(p).classList.add('active');
+            if(b) { document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active')); b.classList.add('active'); }
+            if(p==='transfer') { tDate.valueAsDate = new Date(); updateLive('tFrom','tLive'); }
+            if(p==='entry') { eDate.valueAsDate = new Date(); loadCats(); updateLive('eAcc','eLive'); }
+            if(p==='reports') runReport();
+        }
+
+        function msg(t) {
+            const x = document.getElementById('toast');
+            x.innerText = t; x.style.opacity = '1'; x.style.transform = 'translate(-50%,0)';
+            setTimeout(() => { x.style.opacity='0'; x.style.transform='translate(-50%,-10px)'; }, 3000);
+        }
+
+        async function load() {
+            try {
+                // 1. Config
+                const { data: c } = await supa.from('Config').select('*').single();
+                if(c) {
+                    conf = c;
+                    cMain.value = c.Main; cSave.value = c.Saving; cCCL.value = c.CCL;
+                    cCCA.value = c.CCL - c.CCS; cRate.value = c.Rate; cCry.value = c.Crypto;
+                }
+                
+                // 2. Vehicles
+                const { data: v } = await supa.from('Vehicles').select('*');
+                if(v) {
+                    vehs = v;
+                    vehicleList.innerHTML = vehs.map(x => `
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; background:#f8fafc; margin-bottom:5px; border-radius:8px; font-size:12px;">
+                            <span><b>${x.Registration}</b> ${x.Make}</span>
+                            <button onclick="delVehicle('${x.id}')" class="btn-del">✕</button>
+                        </div>
+                    `).join('');
+                }
+
+                // 3. Transactions
+                const { data: t, error } = await supa.from('Transaction').select('*').order('Date', { ascending: false });
+                if(!error) { txs = t; calculate(); }
+            } catch (e) { console.error(e); }
+        }
+
+        // Init
+        load();
+        eDate.valueAsDate = new Date();
+        loadCats();
+    </script>
+</body>
+</html>
